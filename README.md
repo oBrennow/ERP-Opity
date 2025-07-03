@@ -119,9 +119,8 @@ cd erp-opity
 go mod download
 ```
 
-3. Configure o banco de dados:
+3. Configure o banco de dados (o arquivo `configs/config.yaml` contém credenciais de exemplo, altere-as antes de usar em produção):
 ```bash
-cp configs/config.example.yaml configs/config.yaml
 # Edite configs/config.yaml com suas configurações
 ```
 
@@ -133,6 +132,18 @@ go run cmd/migrate/main.go
 5. Inicie o servidor:
 ```bash
 go run cmd/server/main.go
+```
+
+6. Inicie a aplicação desktop:
+```bash
+go run cmd/desktop/main.go
+```
+
+7. Inicie a interface web (opcional):
+```bash
+cd ui
+npm install
+npm run dev
 ```
 
 ## Configuração

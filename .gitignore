@@ -1,0 +1,22 @@
+# Binaries and build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Logs
+*.log
+logs/
+
+# Dependency directories
+vendor/
+ui/node_modules/
+
+# IDE files
+.vscode/
+.idea/
+
+# Output directories
+ui/dist/

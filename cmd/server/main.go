@@ -41,9 +41,10 @@ func main() {
 	router := mux.NewRouter()
 
 	// Middleware
-	router.Use(server.LoggingMiddleware)
-	router.Use(server.CORSMiddleware)
-	router.Use(server.AuthMiddleware)
+        router.Use(server.LoggingMiddleware(logger))
+        router.Use(server.CORSMiddleware)
+        router.Use(server.AuthMiddleware(cfg.Security.JWTSecret))
+        router.Use(server.RateLimitMiddleware(100, time.Minute))
 
 	// Health check
 	router.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,6 @@
 # Configuração do ERP Opity
 # Sistema ERP Modular Multiempresa
+# Este arquivo contém credenciais de exemplo. Altere antes de usar em produção.
 
 # Configurações do Servidor
 server:

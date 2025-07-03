@@ -1,35 +1,40 @@
 package server
 
 import (
-	"net/http"
-	"time"
+    "net/http"
+    "sync"
+    "time"
+    "strings"
 
-	"erp-opity/pkg/logger"
+    "github.com/golang-jwt/jwt/v5"
+
+    "erp-opity/pkg/logger"
 )
 
 // LoggingMiddleware registra informações sobre as requisições HTTP
-func LoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+func LoggingMiddleware(log logger.Logger) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            start := time.Now()
 
-		// Criar response writer customizado para capturar status code
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+            // Criar response writer customizado para capturar status code
+            wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Executar handler
-		next.ServeHTTP(wrapped, r)
+            // Executar handler
+            next.ServeHTTP(wrapped, r)
 
-		// Log da requisição
-		duration := time.Since(start)
-		logger := logger.New()
-		logger.WithFields(map[string]interface{}{
-			"method":     r.Method,
-			"path":       r.URL.Path,
-			"status":     wrapped.statusCode,
-			"duration":   duration.String(),
-			"user_agent": r.UserAgent(),
-			"remote_ip":  r.RemoteAddr,
-		}).Info("HTTP Request")
-	})
+            // Log da requisição
+            duration := time.Since(start)
+            log.WithFields(map[string]interface{}{
+                "method":     r.Method,
+                "path":       r.URL.Path,
+                "status":     wrapped.statusCode,
+                "duration":   duration.String(),
+                "user_agent": r.UserAgent(),
+                "remote_ip":  r.RemoteAddr,
+            }).Info("HTTP Request")
+        })
+    }
 }
 
 // CORSMiddleware configura CORS para requisições cross-origin
@@ -52,8 +57,9 @@ func CORSMiddleware(next http.Handler) http.Handler {
 }
 
 // AuthMiddleware verifica autenticação do usuário
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func AuthMiddleware(secret string) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Rotas públicas que não precisam de autenticação
 		publicPaths := map[string]bool{
 			"/api/v1/health":        true,
@@ -75,22 +81,50 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Validar token (implementação simplificada)
-		if !isValidToken(authHeader) {
-			http.Error(w, "Token inválido", http.StatusUnauthorized)
-			return
-		}
+                if !isValidToken(authHeader, secret) {
+                        http.Error(w, "Token inválido", http.StatusUnauthorized)
+                        return
+                }
 
-		next.ServeHTTP(w, r)
-	})
+                next.ServeHTTP(w, r)
+        })
+    }
 }
 
 // RateLimitMiddleware limita a taxa de requisições
-func RateLimitMiddleware(next http.Handler) http.Handler {
-	// Implementação simplificada - em produção usar Redis ou similar
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Implementar rate limiting
-		next.ServeHTTP(w, r)
-	})
+type rateLimiter struct {
+    mu        sync.Mutex
+    tokens    int
+    lastCheck time.Time
+}
+
+var clients = make(map[string]*rateLimiter)
+
+func RateLimitMiddleware(limit int, window time.Duration) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            ip := r.RemoteAddr
+            rl, ok := clients[ip]
+            if !ok {
+                rl = &rateLimiter{tokens: limit, lastCheck: time.Now()}
+                clients[ip] = rl
+            }
+
+            rl.mu.Lock()
+            defer rl.mu.Unlock()
+            now := time.Now()
+            if elapsed := now.Sub(rl.lastCheck); elapsed > window {
+                rl.tokens = limit
+                rl.lastCheck = now
+            }
+            if rl.tokens <= 0 {
+                http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+                return
+            }
+            rl.tokens--
+            next.ServeHTTP(w, r)
+        })
+    }
 }
 
 // SecurityMiddleware adiciona headers de segurança
@@ -118,7 +152,13 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 // isValidToken valida o token de autenticação (implementação simplificada)
-func isValidToken(token string) bool {
-	// TODO: Implementar validação real do JWT
-	return len(token) > 0
+func isValidToken(token, secret string) bool {
+    token = strings.TrimPrefix(token, "Bearer ")
+    _, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+        if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, jwt.ErrTokenSignatureInvalid
+        }
+        return []byte(secret), nil
+    })
+    return err == nil
 }
